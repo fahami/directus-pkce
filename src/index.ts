@@ -162,7 +162,7 @@ type CodeChallengeRedisEntryType = {
 	code_challenge: string,
 	code_challenge_method: string,
 	directus_refresh_token: string | null
-	//directus_session_token: string | null
+	directus_session_token: string | null
 }
 
 class CodeChallengeMethods {
@@ -354,7 +354,7 @@ export default defineEndpoint({
 			await myStorage.setCodeChallenge(authorization_code, {
 				code_challenge: code_challenge_app,
 				code_challenge_method: code_challenge_method_app,
-				//directus_session_token: null, // TODO: can be removed, as we dont want to share the directus session token.
+				directus_session_token: null, // TODO: can be removed, as we dont want to share the directus session token.
 				directus_refresh_token: null, // currently we have not saved the directus_refresh_token. After the OAuth2 Flow we will add it there
 			});
 
@@ -421,7 +421,7 @@ export default defineEndpoint({
 				code_challenge: storedCodeChallenge?.code_challenge,
 				code_challenge_method: storedCodeChallenge?.code_challenge_method,
 				directus_refresh_token: directus_refresh_token,
-				//directus_session_token: directus_session_token, // currently we have not saved the directus_refresh_token. After the OAuth2 Flow we will add it there
+				directus_session_token: directus_session_token, // currently we have not saved the directus_refresh_token. After the OAuth2 Flow we will add it there
 			});
 
 			// now redirect the user to the previously verified redirect url
@@ -469,11 +469,10 @@ export default defineEndpoint({
 					return res.status(400).json({ error: 'Invalid code verifier.' });
 				}
 
-				//const directus_session_token = storedCodeChallenge.directus_session_token;
-				//if (!directus_session_token) {
-				//	return res.status(400).json({ error: 'Session not found or expired. No directus_refresh_token found' });
-				//}
-
+				const directus_session_token = storedCodeChallenge.directus_session_token;
+				if (!directus_session_token) {
+					return res.status(400).json({ error: 'Session not found or expired. No directus_refresh_token found' });
+				}
 
 				const directus_refresh_token = storedCodeChallenge.directus_refresh_token;
 
