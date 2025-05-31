@@ -8,7 +8,8 @@ import { NanoidHelper } from "./helpers/NanoidHelper";
 
 const env = process.env;
 const endpoint = "pkce";
-const PUBLIC_URL = env.PUBLIC_URL || ''; // e.g. http://rocket-meals.de/rocket-meals/api or empty string
+const PUBLIC_URL = env.PUBLIC_URL || '';
+const CALLBACK_FALLBACK_URL = env.CALLBACK_FALLBACK_URL || '';
 
 function getUrlToProviderLogin(providerName: string, redirectURL: string) {
 	return `${PUBLIC_URL}/auth/login/${providerName}?redirect=${redirectURL}`;
@@ -362,7 +363,7 @@ export default defineEndpoint({
 				redirect_url: redirect_url_well_formed.toString()
 			});
 
-			const redirectUrlToSaveSession = `${PUBLIC_URL}/${endpoint}/save-session?state=${state}`;
+			const redirectUrlToSaveSession = `${PUBLIC_URL}/${endpoint}/save-session?state=${state}&redirect_url=${encodeURIComponent(redirect_url_well_formed.toString())}`;
 
 			const urlToProviderLogin = getUrlToProviderLogin(provider, redirectUrlToSaveSession);
 			return res.json({
@@ -374,7 +375,12 @@ export default defineEndpoint({
 		router.get('/save-session', async (req, res) => {
 			logger.info(`Received request to ${endpoint}/save-session with query: ${JSON.stringify(req.query)} and cookies: ${JSON.stringify(req.cookies)}`);
 
-			const { state } = req.query;
+			const { state, reason } = req.query;
+			if (reason) {
+				logger.error(`Error during OAuth2 flow: ${reason}`);
+				return res.redirect(CALLBACK_FALLBACK_URL + "?reason=" + encodeURIComponent(reason.toString()));
+			}
+
 			if (!state) {
 				return res.status(400).json({ error: 'Missing required parameter state.' });
 			}
