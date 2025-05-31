@@ -483,7 +483,7 @@ export default defineEndpoint({
 				return res.json({
 					message: 'Validation successful',
 					directus_refresh_token: directus_refresh_token,
-					//directus_session_token: directus_session_token // https://github.com/directus/directus/issues/21757#issuecomment-1992539944  https://github.com/directus/directus/issues/21757
+					directus_session_token: directus_session_token // https://github.com/directus/directus/issues/21757#issuecomment-1992539944  https://github.com/directus/directus/issues/21757
 				});
 			} catch (error: any) {
 				return res.status(500).json({ error: 'Internal server error.', message: error.toString() });
