@@ -2,12 +2,12 @@ import { defineEndpoint } from '@directus/extensions-sdk';
 import Redis from 'ioredis';
 import ms from 'ms';
 import crypto from 'crypto';
-import { Knex } from 'knex';
 import { RedirectWhitelistHelper } from "./helpers/RedirectWhitelistHelper";
 import { createKv, KvLocal, KvRedis } from '@directus/memory';
 import { NanoidHelper } from "./helpers/NanoidHelper";
 
 const env = process.env;
+const endpoint = "pkce";
 const PUBLIC_URL = env.PUBLIC_URL || ''; // e.g. http://rocket-meals.de/rocket-meals/api or empty string
 
 function getUrlToProviderLogin(providerName: string, redirectURL: string) {
@@ -21,13 +21,13 @@ type AuthorizationCodeAndRedirectType = {
 	redirect_url: string
 }
 
-interface MyKvStorageImplementation {
+interface KvStorageImplementation {
 	set(key: string, value: string): Promise<"OK">
 	get(key: string): Promise<string | null>
 	del(...args: string[]): Promise<number>
 }
 
-class MyKvStorageRedis implements MyKvStorageImplementation {
+class MyKvStorageRedis implements KvStorageImplementation {
 	private duration: number
 	private redis: Redis
 	constructor(redisUrl: string, duration: number) {
@@ -49,7 +49,7 @@ class MyKvStorageRedis implements MyKvStorageImplementation {
 
 }
 
-class MyKvStorageMemory implements MyKvStorageImplementation {
+class MyKvStorageMemory implements KvStorageImplementation {
 	private cache: KvLocal | KvRedis;
 	private duration: number;
 
@@ -97,11 +97,11 @@ class MyKvStorageMemory implements MyKvStorageImplementation {
 }
 
 
-class MyKvStorage {
+class KvStorage {
 	static prefix_code_challenge = "pkce_code_challenge_";
 	static prefix_save_session = "pkce_save_session_"
 
-	private kvImplementation: MyKvStorageImplementation
+	private kvImplementation: KvStorageImplementation
 
 	constructor(redisUrl: string | null, maxTtl?: number) {
 		const defaultDuration = 300; // max Time To Live (TTL) to 300s = 5min
@@ -112,18 +112,18 @@ class MyKvStorage {
 	}
 
 	async setCodeChallenge(authorization_code: string, code_challenge: CodeChallengeRedisEntryType) {
-		await this.kvImplementation.set(MyKvStorage.prefix_code_challenge + authorization_code, JSON.stringify(code_challenge))
+		await this.kvImplementation.set(KvStorage.prefix_code_challenge + authorization_code, JSON.stringify(code_challenge))
 	}
 
 	async getCodeChallenge(authorization_code: string) {
-		let savedKey = await this.kvImplementation.get(MyKvStorage.prefix_code_challenge + authorization_code);
+		let savedKey = await this.kvImplementation.get(KvStorage.prefix_code_challenge + authorization_code);
 		if (savedKey) {
 			try {
 				let obj = JSON.parse(savedKey) as CodeChallengeRedisEntryType
 				return obj;
 			} catch (error) {
 				// Optionally log the error
-				console.error(`Failed to parse CodeChallenge for key ${MyKvStorage.prefix_code_challenge + authorization_code}:`, error);
+				console.error(`Failed to parse CodeChallenge for key ${KvStorage.prefix_code_challenge + authorization_code}:`, error);
 				return null;
 			}
 		}
@@ -131,18 +131,18 @@ class MyKvStorage {
 	}
 
 	async setStateInformation(state: string, authCodeAndRedirect: AuthorizationCodeAndRedirectType) {
-		await this.kvImplementation.set(MyKvStorage.prefix_save_session + state, JSON.stringify(authCodeAndRedirect));
+		await this.kvImplementation.set(KvStorage.prefix_save_session + state, JSON.stringify(authCodeAndRedirect));
 	}
 
 	async getStateInformation(state: string): Promise<AuthorizationCodeAndRedirectType | null> {
-		let savedKey = await this.kvImplementation.get(MyKvStorage.prefix_save_session + state);
+		let savedKey = await this.kvImplementation.get(KvStorage.prefix_save_session + state);
 		if (savedKey) {
 			try {
 				let obj = JSON.parse(savedKey) as AuthorizationCodeAndRedirectType
 				return obj;
 			} catch (error) {
 				// Optionally log the error
-				console.error(`Failed to parse StateInformation for key ${MyKvStorage.prefix_save_session + state}:`, error);
+				console.error(`Failed to parse StateInformation for key ${KvStorage.prefix_save_session + state}:`, error);
 				return null;
 			}
 		}
@@ -150,11 +150,11 @@ class MyKvStorage {
 	}
 
 	async clearStateInformation(state: string) {
-		await this.kvImplementation.del(MyKvStorage.prefix_save_session + state);
+		await this.kvImplementation.del(KvStorage.prefix_save_session + state);
 	}
 
 	async clearAssociatedCodeChallengeFromCode(authorization_code: string) {
-		await this.kvImplementation.del(MyKvStorage.prefix_code_challenge + authorization_code);
+		await this.kvImplementation.del(KvStorage.prefix_code_challenge + authorization_code);
 	}
 }
 
@@ -170,21 +170,20 @@ class CodeChallengeMethods {
 	static METHOD_plain = "plain"
 }
 
-async function generateRefreshToken(directus_session_token: string, accountability: any, userId: string, database: Knex<any, any[]>) {
+async function generateRefreshToken(accountability: any, userId: string, knex: any) {
 	// we need to obtain the directus_refresh_token from the directus_session_token
 	if (!userId) {
 		throw new Error("No user Id given")
 	}
 
-	const knex = database;
-
 	/**
 	 * Start of copy: https://github.com/directus/directus/blob/main/api/src/services/authentication.ts Login
 	 */
 	const refreshToken = await NanoidHelper.getNanoid(64);
-	const refreshTokenTTL = process.env['REFRESH_TOKEN_TTL'] || '0';
+	const refreshTokenTTL = env['REFRESH_TOKEN_TTL'] || '0';
 	const msRefreshTokenTTL: number = ms(String(refreshTokenTTL)) || 0;
 	const refreshTokenExpiration = new Date(Date.now() + msRefreshTokenTTL);
+	console.log(`PKCE: Generating refresh token. TTL string: "${refreshTokenTTL}", ms: ${msRefreshTokenTTL}, Expiration: ${refreshTokenExpiration.toISOString()}`);
 
 	await knex('directus_sessions').insert({
 		token: refreshToken,
@@ -196,10 +195,10 @@ async function generateRefreshToken(directus_session_token: string, accountabili
 	});
 
 	await knex('directus_sessions').delete().where('expires', '<', new Date());
+
 	return refreshToken;
 }
 
-const endpoint = "pkce";
 
 function getEnvVarNameAuthProviderRedirectAllowList(provider: string) {
 	const providerCaps = provider.toUpperCase() // makes from "google" --> "GOOGLE"
@@ -247,27 +246,23 @@ function checkIfProviderRegistered(provider: string) {
 
 function generateAuthorizationCode(amountBytes?: number) {
 	const bytesMinAmount = 32;
-	const bytesMaxAmount = 96;
 	const usedAmountBytes = amountBytes || bytesMinAmount;
 	const authorization_code = crypto.randomBytes(usedAmountBytes).toString('hex');
+
 	return authorization_code;
 }
 
 function generateStateCode() {
-	const bytesMinAmount = 16;
 	const bytesDefaultAmount = 32;
+
 	return crypto.randomBytes(bytesDefaultAmount).toString('hex');
 }
 
 export default defineEndpoint({
 	id: endpoint,
 	handler: (router, {
-		services,
 		database,
-		getSchema,
-		env,
-		logger
-	}) => {
+		env, logger }) => {
 
 		const redisUrl = env?.["REDIS"];
 		let validRedisUrl: string | null = null;
@@ -277,7 +272,7 @@ export default defineEndpoint({
 			validRedisUrl = redisUrl;
 		}
 
-		const myStorage = new MyKvStorage(validRedisUrl, 300);
+		const storage = new KvStorage(validRedisUrl, 300);
 
 		// 4.1.  Client Creates a Code Verifier - Mobile App
 		// 4.2.  Client Creates the Code Challenge - Mobile App
@@ -285,6 +280,7 @@ export default defineEndpoint({
 		// 4.3.  Client Sends the Code Challenge with the Authorization Request - Directus Extension
 		router.post('/authorize', async (req, res) => {
 			const { provider, code_challenge, redirect_url, code_challenge_method } = req.body;
+			logger.info(`Received request to ${endpoint}/authorize with body: ${JSON.stringify(req.body)}`);
 
 			//   The client sends the code challenge as part of the OAuth 2.0
 			//    Authorization Request (Section 4.1.1 of [RFC6749]) using the
@@ -340,29 +336,28 @@ export default defineEndpoint({
 				return res.status(400).json({ error: `Redirect url ${redirect_url} is not included in the redirect allow list for the provider ${provider}` });
 			}
 
-			const authorization_code = generateAuthorizationCode()
 			// Store the code_challenge_app with the state as key in Redis
 			// When the server issues the authorization code in the authorization
 			//    response, it MUST associate the "code_challenge" and
 			//    "code_challenge_method" values with the authorization code so it can
 			//    be verified later.
+			const authorization_code = generateAuthorizationCode()
 			// Typically, the "code_challenge" and "code_challenge_method" values
 			//    are stored in encrypted form in the "code" itself but could
 			//    alternatively be stored on the server associated with the code.  The
 			//    server MUST NOT include the "code_challenge" value in client requests
 			//    in a form that other entities can extract.
-			await myStorage.setCodeChallenge(authorization_code, {
+			await storage.setCodeChallenge(authorization_code, {
 				code_challenge: code_challenge_app,
 				code_challenge_method: code_challenge_method_app,
-				directus_session_token: null, // TODO: can be removed, as we dont want to share the directus session token.
+				directus_session_token: null,
 				directus_refresh_token: null, // currently we have not saved the directus_refresh_token. After the OAuth2 Flow we will add it there
 			});
-
 
 			// We will now use directus implemented OAuth2 Flow and just save the verified user then, so that the directus_refresh_token can be received when passing the authorization_code and code_verifier
 			const state = generateStateCode() // create a state, so that we know upon redirect which authorization code was in this session
 
-			await myStorage.setStateInformation(state, {
+			await storage.setStateInformation(state, {
 				authorization_code: authorization_code,
 				redirect_url: redirect_url_well_formed.toString()
 			});
@@ -377,6 +372,7 @@ export default defineEndpoint({
 
 		// Route to save the session using state after successful OAuth2 redirect
 		router.get('/save-session', async (req, res) => {
+			logger.info(`Received request to ${endpoint}/save-session with query: ${JSON.stringify(req.query)} and cookies: ${JSON.stringify(req.cookies)}`);
 
 			const { state } = req.query;
 			if (!state) {
@@ -389,7 +385,7 @@ export default defineEndpoint({
 				return res.status(400).json({ error: 'Missing directus_session_token in cookies.' });
 			}
 
-			let saved_authorization_code_and_redirect = await myStorage.getStateInformation(stateAsString);
+			let saved_authorization_code_and_redirect = await storage.getStateInformation(stateAsString);
 			if (!saved_authorization_code_and_redirect) {
 				return res.status(400).json({ error: 'No information found for state. Might be too long' });
 			}
@@ -399,29 +395,32 @@ export default defineEndpoint({
 				return res.status(400).json({ error: 'No information found for state. Might be too long / outdated' });
 			}
 
-			await myStorage.clearStateInformation(stateAsString); // clear state information, as we got all the information and they exist.
+			await storage.clearStateInformation(stateAsString); // clear state information, as we got all the information and they exist.
 
-			const storedCodeChallenge = await myStorage.getCodeChallenge(authorization_code);
+			const storedCodeChallenge = await storage.getCodeChallenge(authorization_code);
 			if (!storedCodeChallenge || !storedCodeChallenge.code_challenge_method || !storedCodeChallenge.code_challenge) {
 				return res.status(400).json({ error: 'No information found for saved authorization code. Might be too long' });
 			}
 
 			// @ts-ignore
 			const accountability = req?.accountability;
+			logger.info(`Accountability: ${JSON.stringify(accountability)}`); // Log the accountability for debugging
+
 			// @ts-ignore
 			const userId = req?.accountability?.user;
 			if (!accountability || !userId) {
 				return res.status(400).json({ error: 'No accountability or userId found.' });
 			}
-			let knexDatabase = database as any as Knex<any, any[]>;
-			let directus_refresh_token = await generateRefreshToken(directus_session_token, accountability, userId, knexDatabase);
+			logger.info(`User ID: ${userId}`); // Log the user ID for debugging
+
+			let directus_refresh_token = await generateRefreshToken(accountability, userId, database);
 
 			// Save the directus refresh token in the code challenge
-			await myStorage.setCodeChallenge(saved_authorization_code_and_redirect.authorization_code, {
+			await storage.setCodeChallenge(saved_authorization_code_and_redirect.authorization_code, {
 				code_challenge: storedCodeChallenge?.code_challenge,
 				code_challenge_method: storedCodeChallenge?.code_challenge_method,
 				directus_refresh_token: directus_refresh_token,
-				directus_session_token: directus_session_token, // currently we have not saved the directus_refresh_token. After the OAuth2 Flow we will add it there
+				directus_session_token: directus_session_token,
 			});
 
 			// now redirect the user to the previously verified redirect url
@@ -432,7 +431,6 @@ export default defineEndpoint({
 		// 4.5.  Client Sends the Authorization Code and the Code Verifier to the Token Endpoint
 		router.post('/token', async (req, res) => {
 			const { code, code_verifier } = req.body;
-			//console.log(req.body);
 
 			//    code_verifier
 			//       REQUIRED.  Code verifier
@@ -442,7 +440,7 @@ export default defineEndpoint({
 			}
 
 			const authorization_code = code;
-			const storedCodeChallenge = await myStorage.getCodeChallenge(authorization_code);
+			const storedCodeChallenge = await storage.getCodeChallenge(authorization_code);
 			if (!storedCodeChallenge) {
 				return res.status(400).json({ error: 'Invalid or expired state.' });
 			}
@@ -477,7 +475,7 @@ export default defineEndpoint({
 				const directus_refresh_token = storedCodeChallenge.directus_refresh_token;
 
 				// If valid, clear the stored state and session
-				await myStorage.clearAssociatedCodeChallengeFromCode(authorization_code);
+				await storage.clearAssociatedCodeChallengeFromCode(authorization_code);
 
 				// Return the session or token associated with the validated request
 				return res.json({
