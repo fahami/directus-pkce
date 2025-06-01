@@ -171,7 +171,7 @@ class CodeChallengeMethods {
 	static METHOD_plain = "plain"
 }
 
-async function generateRefreshToken(accountability: any, userId: string, knex: any) {
+async function generateRefreshToken(accountability: any, userId: string, knex: any, logger?: any) {
 	// we need to obtain the directus_refresh_token from the directus_session_token
 	if (!userId) {
 		throw new Error("No user Id given")
@@ -184,7 +184,7 @@ async function generateRefreshToken(accountability: any, userId: string, knex: a
 	const refreshTokenTTL = env['REFRESH_TOKEN_TTL'] || '0';
 	const msRefreshTokenTTL: number = ms(String(refreshTokenTTL)) || 0;
 	const refreshTokenExpiration = new Date(Date.now() + msRefreshTokenTTL);
-	console.log(`PKCE: Generating refresh token. TTL string: "${refreshTokenTTL}", ms: ${msRefreshTokenTTL}, Expiration: ${refreshTokenExpiration.toISOString()}`);
+	logger.info(`PKCE: Generating refresh token. TTL string: "${refreshTokenTTL}", ms: ${msRefreshTokenTTL}, Expiration: ${refreshTokenExpiration.toISOString()}`);
 
 	await knex('directus_sessions').insert({
 		token: refreshToken,
@@ -390,6 +390,7 @@ export default defineEndpoint({
 			if (!directus_session_token) {
 				return res.status(400).json({ error: 'Missing directus_session_token in cookies.' });
 			}
+			logger.info(`Directus session token: ${directus_session_token}`); // Log the directus session token for debugging
 
 			let saved_authorization_code_and_redirect = await storage.getStateInformation(stateAsString);
 			if (!saved_authorization_code_and_redirect) {
@@ -419,7 +420,7 @@ export default defineEndpoint({
 			}
 			logger.info(`User ID: ${userId}`); // Log the user ID for debugging
 
-			let directus_refresh_token = await generateRefreshToken(accountability, userId, database);
+			let directus_refresh_token = await generateRefreshToken(accountability, userId, database, logger);
 
 			// Save the directus refresh token in the code challenge
 			await storage.setCodeChallenge(saved_authorization_code_and_redirect.authorization_code, {
