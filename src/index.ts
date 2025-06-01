@@ -1,6 +1,6 @@
 import { defineEndpoint } from '@directus/extensions-sdk';
 import Redis from 'ioredis';
-import ms from 'ms';
+import ms, { StringValue } from 'ms';
 import crypto from 'crypto';
 import { RedirectWhitelistHelper } from "./helpers/RedirectWhitelistHelper";
 import { createKv, KvLocal, KvRedis } from '@directus/memory';
@@ -182,7 +182,7 @@ async function generateRefreshToken(accountability: any, userId: string, knex: a
 	 */
 	const refreshToken = await NanoidHelper.getNanoid(64);
 	const refreshTokenTTL = env['REFRESH_TOKEN_TTL'] || '0';
-	const msRefreshTokenTTL: number = ms(String(refreshTokenTTL)) || 0;
+	const msRefreshTokenTTL: number = ms(String(refreshTokenTTL) as StringValue) || 0;
 	const refreshTokenExpiration = new Date(Date.now() + msRefreshTokenTTL);
 	logger.info(`PKCE: Generating refresh token. TTL string: "${refreshTokenTTL}", ms: ${msRefreshTokenTTL}, Expiration: ${refreshTokenExpiration.toISOString()}`);
 
