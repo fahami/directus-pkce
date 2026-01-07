@@ -41,6 +41,9 @@
 		"type": "git",
 		"url": "git+https://github.com/fahami/directus-pkce.git"
 	},
+	"publishConfig": {
+		"access": "public"
+	},
 	"bugs": {
 		"url": "https://github.com/fahami/directus-pkce/issues"
 	},
