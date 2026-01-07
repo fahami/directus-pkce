@@ -38,6 +38,7 @@ class KvStorage {
 		if (storageType === 'redis' && redisUrl) {
 			this.kv = createKv({
 				type: 'redis',
+				namespace: 'pkce',
 				redis: new Redis(redisUrl),
 			});
 		} else {
